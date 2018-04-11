@@ -24,7 +24,8 @@ Link to report
 ## P4: Explore and summarize data
 In this prokect I used R and applied exploratory data analysis techniques to explore a selected data set for distributions, outliers, and anomalies.
 
-## P5: Identify Fraud from Enron Email
+## P5: Identify fraud from Enron Email
+In this project I used machine learning techniques to build an algorithm to identify Enron Employees who may have committed fraud based on the public Enron financial and email dataset.
 
 Link to report
 
@@ -32,4 +33,3 @@ Link to report
 
 Link to report
 
-## P7: Design an A/B Test
