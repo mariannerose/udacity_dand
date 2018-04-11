@@ -16,7 +16,8 @@ In this project I conducted my own data analysis and created a report to share m
 
 Link to report
 
-## P3: Wrangle OpenStreetMap Data
+## P3: Wrangle OpenStreetMap data
+For this project I used data munging techniques, such as assessing the quality of the data for validity, accuracy, completeness, consistency and uniformity, to clean OpenStreetMap data for Leiden, a city in the Netherlands. 
 
 Link to report
 
