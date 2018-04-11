@@ -1,0 +1,102 @@
+Description
+A dataset containing census, broadband and voting data for the 8057 census tracts in California. The variables are as follows:
+
+Usage
+Data
+
+Format
+A data frame with 8057 rows rows and 30 variables:
+
+Id
+11-digit census tract id
+
+county
+5-digit county id
+
+county_name
+County name
+
+population
+Population (0 - 39,454)
+
+total_hh
+Total number of households (4 - 8574)
+
+renter_hh
+Total number of households who rent (0 - 6,648)
+
+owner_hh
+Total number of households who own (0 - 5,229)
+
+total_hhsize
+Average number of household members (1.02 - 9.75)
+
+renter_hhsize
+Average number of members for households who rent (0 - 8.84)
+
+owner_hhsize
+Average number of members for households who own (0 - 11.91)
+
+median_income
+Median income in US dollars (4,541 - 250,000)
+
+participation_rate
+% of population working (0 - 100)
+
+unemployment_rate
+% of population being unemployed (0 - 100)
+
+poverty_rate
+% of population living under the poverty line (0 - 100)
+
+square_miles
+Surface in square miles (0 - 6,952)
+
+pop_sqmiles
+Population per square mile (0 - 173,337)
+
+total_vote
+Total number of casted votes in 2016 Presidential elections (0.61 - 10,628)
+
+dem
+% of votes for Democratic party in 2016 Presidential elections (0 - 100)
+
+rep
+% of votes for Republican party in 2016 Presidential elections (0 - 100)
+
+winner
+Party with most votes in 2016 Presidential elections (Democrats, Republicans)
+
+median_down
+Advertised download speeds in Mbps (2 - 40)
+
+median_up
+Advertised upload speeds in Mbps (1 - 20)
+
+nr_providers
+Number of providers of broadband connections to consumers (1 - 13)
+
+---
+
+3 variables were added later:
+
+special
+Type of tract (regular, water, special_land)
+
+owner
+% of households who own their house (0 - 100)
+
+voting_part
+% of population that voted in 2016 Presidential elections (0.35 - 340.59)
+
+---
+an additional 3 variables were added later:
+
+type
+Population density (urbanized areas, urban clusters, rural)
+
+long
+Longitude of center point (-124.2 - -114.3)
+
+lat
+Latitude of center point (32.55 - 41.94)
