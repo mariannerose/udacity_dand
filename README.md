@@ -21,7 +21,8 @@ For this project I used data munging techniques, such as assessing the quality o
 
 Link to report
 
-## P4: Explore and Summarize Data
+## P4: Explore and summarize data
+In this prokect I used R and applied exploratory data analysis techniques to explore a selected data set for distributions, outliers, and anomalies.
 
 ## P5: Identify Fraud from Enron Email
 
