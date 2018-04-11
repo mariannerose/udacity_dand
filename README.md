@@ -12,6 +12,7 @@ In this project I used descriptive statistics and a statistical test to analyze 
 Link to report
 
 ## P2: Investigate a Dataset
+In this project I conducted my own data analysis and created a report to share my findings. I used pandas and NumPy to answer the questions I was most interested in, and created a report sharing the answers. 
 
 Link to report
 
