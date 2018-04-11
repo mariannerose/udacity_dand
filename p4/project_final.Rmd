@@ -1,0 +1,2246 @@
+--- 
+title: 'Californian census tracts'
+author: 'by Rianne Heijboer'
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+---  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# used packages
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(maps)
+library(plyr)
+library(sp)
+library(foreign)
+library(tigris)
+library(tm)
+library(gridExtra)
+library(stringr)
+library(psych)
+library(kimisc)
+library(rgdal)
+library(naniar)
+library(MASS)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# remove axes and ticks from maps
+remove_axes <- theme(
+  axis.text = element_blank(),
+  axis.line = element_blank(),
+  axis.ticks = element_blank(),
+  panel.border = element_blank(),
+  panel.grid = element_blank(),
+  axis.title = element_blank()
+  )
+
+# function to create a map
+map <- function(data1, data2, fill, fillvar) {
+  
+  p <- ggplot(data = data1, mapping = aes(x = long, y = lat, group = group)) +
+    coord_fixed(1.3) +
+    geom_polygon(fill = 'white', color = 'grey', size = 0.3) +
+    remove_axes
+  
+  if(fill){
+    p <- p + geom_polygon(data = data2, aes_string(fill = fillvar))
+  } else {
+    p <- p + geom_polygon(data = data2, fill = fillvar)
+  }
+p
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# function to create a histogram
+histogram <- function(data, xvar_string, bin, 
+                      xscale, xend, xstep,
+                      yscale, yend, ystep, 
+                      coord, col, ci) 
+  {
+ 
+  p <- ggplot(data = data, aes_string(x = xvar_string)) +
+    geom_histogram(binwidth = bin) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+  
+  if(xscale) 
+  {p <- p + scale_x_continuous(breaks = seq(0, xend, xstep), labels = comma) } 
+  
+  else 
+    {
+      if(xvar_string == 'pop_sqmiles')
+      {p <- p + scale_x_continuous(trans = 'log10', labels = comma, 
+                                  breaks = c(1, 10, 100, 1000, 2500, 5000, 
+                                             10000, 50000, 100000)) 
+      }
+      else if(xvar_string == 'square_miles')
+        {p <- p + scale_x_continuous(trans = 'log10', labels = comma, 
+                                  breaks = c(0, 0.1, 1, 5, 10, 100, 1000, 
+                                             5000, 10000))
+      }
+      else if(xvar_string == 'median_income'){
+        p <- p + scale_x_continuous(trans = 'log10', labels = comma,
+                     breaks = c(0, 10000, 30000, 50000, 70000, 100000, 
+                                150000, 200000))
+      }
+  }
+    
+  if(yscale) {
+    p <- p + scale_y_continuous(breaks = seq(0, yend, ystep), labels = comma)
+  } 
+    
+  if(coord) {
+      p <- p + coord_cartesian(xlim = c(0, quantile(col, ci, na.rm = TRUE)))
+  } 
+  p
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# function to create a bar plot
+bar <- function(data, yend, ystep){
+  
+  p <- ggplot(data = data, aes(x = county_name, fill = special)) + 
+    geom_bar() +
+    scale_y_continuous(breaks = seq(0, yend, ystep)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) 
+  p
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# function to create a boxplot
+boxplot <- function(data, xvar, yvar, alpha, 
+                    yscale, yend, ystep, 
+                    coord, col, ci){
+  
+  p <- ggplot(data = data, 
+       aes_string(x = xvar, y = yvar, fill = xvar)) +
+       geom_boxplot(outlier.alpha = alpha) +
+       theme(legend.position = 'none') 
+       
+  if(yscale){
+  p <- p + scale_y_continuous(breaks = seq(0, yend, ystep), labels = comma) 
+  }  
+  
+  if(coord) {
+      p <- p + coord_cartesian(ylim = c(0, quantile(col, ci, na.rm = TRUE)))
+  } 
+  
+  # color coding for winner (dem vs rep)
+  if(xvar == 'winner'){
+     p <- p + scale_fill_manual(values = c('dodgerblue3', 'firebrick1'))
+  }
+  
+  # color coding for type (rural vs urban)
+  else if(xvar == 'type'){
+     p <- p + scale_fill_manual(values = c('dodgerblue4', 'dodgerblue2', 'lightskyblue'))   
+  }
+       
+  p
+}
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+scatter <- function(data, xvar, yvar, alpha, xscale, xend, xstep, 
+                    yscale, yend, ystep, coord, col, ci){
+  p <- ggplot(data = data, aes_string(x = xvar, y = yvar)) +
+  geom_jitter(alpha = alpha) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4))
+
+  if(xscale){
+    p <- p + scale_x_continuous(breaks = seq(0, xend, xstep), labels = comma)} 
+  
+  else {
+      if(xvar == 'pop_sqmiles'){
+        p <- p + scale_x_continuous(trans = 'log10', labels = comma, 
+                                    breaks = c(0, 10, 100, 500, 1000, 5000, 
+                                               10000, 100000)) 
+        }
+      
+      else if(xvar == 'median_income'){
+        p <- p + scale_x_continuous(trans = 'log10', labels = comma,
+                                    breaks = c(0, 10000, 30000, 50000, 70000, 100000, 
+                                               150000, 200000))
+      }
+    
+    }
+    
+  if(yscale){
+    p <- p + scale_y_continuous(breaks = seq(0, yend, ystep), labels = comma)
+    } 
+  
+  else {
+    if(yvar == 'pop_sqmiles'){
+      p <- p + scale_y_continuous(trans = 'log10', labels = comma, 
+                                  breaks = c(0, 10, 100, 500, 1000, 5000, 
+                                             10000, 100000)) 
+      }
+    else if(yvar == 'median_income'){
+      p <- p + scale_y_continuous(trans = 'log10', labels = comma,
+                                  breaks = c(0, 10000, 30000, 50000, 70000, 
+                                             100000, 150000, 200000))
+      }
+  }
+    
+  if(coord) {
+      p <- p + coord_cartesian(ylim = c(0, quantile(col, ci, na.rm = TRUE)))
+  } 
+  p
+
+}
+```
+
+## Datasets used
+The used dataset is a combination of data for the state of California coming
+from three main sources:
+
+1. Economic and social characteristics of the population for 2015 were taken 
+from the 2011-2015 American Community Survey 5-Year Estimates by the [United States Census Bureau](https://factfinder.census.gov/faces/nav/jsf/pages/index.xhtml).
+2. Broadband availability from the [Federal Communication Commission](https://www.fcc.gov/general/broadband-deployment-data-fcc-form-477).
+3. Presidential 2016 election results from the [Statewide Database at U.C. Berkeley Law](http://statewidedatabase.org/d10/g16.html).
+
+The data is available per census tract. Census tracts are parts of a county. 
+California has [8057 census tracts](https://www.census.gov/geo/maps-data/data/tallies/tractblock.html) 
+and 58 counties. Each census tract has its own identification code, consisting 
+of 11 digits. The first two digits present the state code (06 for California), 
+the next three digits give the county code and the last 6 digits give the tract 
+code. [(source)](https://transition.fcc.gov/form477/Geo/more_about_census_blocks.pdf)
+
+Next to that the [tigris library](https://cran.r-project.org/web/packages/tigris/tigris.pdf) 
+is used to find spatial data in order to plot census tracts, counties and 
+urban/rural areas on maps. And the [maps library](https://cran.r-project.org/web/packages/maps/maps.pdf) for population numbers per city. 
+
+### Census data
+The data was available by census tract id (Id). The data did not came in 
+one csv file, different files had to be uploaded and merged on the tract id. 
+Only variables that were needed were kept, variables were renamed and the types 
+were changed if needed for easier merging and plotting. 
+
+Census variables:
+
+* Id (tract id)
+* population
+* number of households (total_hh, owner_hh, renter_hh)
+* household size (total_hhsize, renter_hhsize, owner_hhsize)
+* median household income (median_income)
+* participation rate
+* unemployment rate
+* poverty rate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# number of households (hh)
+housing <- read.csv('ACS_15_5YR_B25009_with_ann.csv', skip = 1, 
+                    stringsAsFactors = FALSE
+                    )[, c('Id','Estimate..Total.','Estimate..Owner.occupied.',
+                          'Estimate..Renter.occupied.')] 
+
+# rename column names
+names(housing) <- c('Id', 'total_hh', 'owner_hh', 'renter_hh')
+
+# replace 0 to NA for tracts where all variables are 0 
+housing$total_hh[with(housing, total_hh == 0)] <- NA
+housing$owner_hh[is.na(housing$total_hh)] <- NA
+housing$renter_hh[is.na(housing$total_hh)] <- NA
+
+# average household size of occupied housing units by tenure
+hh_size <- read.csv('ACS_15_5YR_B25010.csv',
+                    stringsAsFactors = FALSE)[, c('GEO.id', 'HD01_VD02', 
+                                                  'HD01_VD03', 'HD01_VD04')]
+
+# rename column names
+names(hh_size) <- c('Id', "total_hhsize", "owner_hhsize", "renter_hhsize")
+
+# replace NA (blank cells) in owner_hhsize and renter_hhsize columns to 0
+# not replacing NA for cells that have no values at all 
+hh_size$owner_hhsize[with(hh_size, is.na(hh_size$owner_hhsize) & 
+                            total_hhsize >0)] <- 0
+hh_size$renter_hhsize[with(hh_size, is.na(hh_size$renter_hhsize) & 
+                            total_hhsize >0)] <- 0
+
+# incomes
+income_ca <- read.csv('ACS_15_5YR_S1901_with_ann.csv', skip = 1, 
+                      stringsAsFactors = FALSE, 
+                      na.strings = c('(X)','N', '-')
+                      )[,c('Id', 'Households..Estimate..Median.income..dollars.')]
+
+# rename column names
+names(income_ca) <- c('Id', 'median_income')
+
+# tranform the median_income values to integers
+income_ca$median_income <- revalue(income_ca$median_income, 
+                                   c("250,000+" = "250000"))
+income_ca$median_income <- as.integer(income_ca$median_income)
+
+# population per census tract
+pop_ca <- read.csv('ACS_15_5YR_B01003_with_ann.csv', skip = 1, 
+                   stringsAsFactors = FALSE)[,c('Id', 'Estimate..Total')]
+
+# rename column
+names(pop_ca) <- c('Id', 'population')
+
+# employment
+employment <- read.csv('ACS_15_5YR_S2301_with_ann.csv', skip = 1,
+                       stringsAsFactors = FALSE,
+                       na.strings = c('-'))[,c('Id',                                  'Labor.Force.Participation.Rate..Estimate..Population.16.years.and.over', 'Unemployment.rate..Estimate..Population.16.years.and.over')]
+
+names(employment) <- c('Id', 'participation_rate', 'unemployment_rate')
+
+# poverty (rate for the total poplation)
+poverty <- read.csv('ACS_15_5YR_S1701_with_ann.csv', skip = 1,
+                    stringsAsFactors = FALSE,
+                    na.strings = c('-'))[,c('Id', 'Percent.below.poverty.level..Estimate..Population.for.whom.poverty.status.is.determined')]
+
+names(poverty) <- c('Id', 'poverty_rate')
+```
+
+The census data was combined with data that mapped the county ids to the county
+names [(source)](https://www2.census.gov/geo/docs/reference/codes/files/st06_ca_cou.txt). 
+Some wrangling was needed; variables were combined, revalued and renamed. 
+
+Added variables:
+
+* county (county id, in format 06###)
+* county_name
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# county codes & names
+codes <- read.csv("coding.csv", 
+                      header = FALSE, 
+                      colClasses = "character" # to keep leading zeros
+                      )[,c('V2', 'V3', 'V4')] 
+
+# combine state and county ids
+codes$county <- paste0(codes$V2,codes$V3, collapse = NULL)
+
+# remove County from county names
+codes$county_name <- removeWords(codes$V4, ' County')
+
+# rename county column and only keep county, county_id and county_name
+names(codes)[2] <- 'county_id'
+codes <- codes[,c(2,4:5)]
+```
+
+Data on the number of square miles per census tract was also added [(source)](https://www.census.gov/cgi-bin/geo/shapefiles/index.php?year=2016&layergroup=Census+Tracts). The surface was given in square meters so this was converted to square miles. 
+
+Added variable:
+
+* square_miles
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# square miles per census tract
+square <- read.dbf("tract_coord.dbf", as.is = FALSE)[, c('GEOID', 'ALAND')]
+
+# change format of Id from factor to character & add 1400000US for merging
+square$GEOID <- paste0('1400000US', as.character(square$GEOID))
+
+# convert square meters to square miles and round to integer
+square$ALAND <- square$ALAND * 3.86102e-7
+
+# rename columns
+names(square) <- c('Id', 'square_miles')
+```
+
+After merging and joining the data the population per square miles was added.   
+
+Added variable:
+
+* pop_sqmiles (population per square mile)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Merge_census_data}
+# combine census datasets
+merged <- Reduce(function(x, y) merge(x, y, all = TRUE), 
+                 list(housing, hh_size, income_ca, employment, poverty, square))
+census <- left_join(merged, pop_ca, by = 'Id')
+
+# change Id to 11 digits tract id
+census$Id <- substr(census$Id, 10, 21)
+
+# add column for county id (06###)
+census$county <- substr(census$Id, 1,5)
+
+# add county name
+census <- left_join(census, codes[, c('county', 'county_name')], by = c('county' = 'county'))
+
+# add population per square mile
+census$pop_sqmiles <- census$population / census$square_miles
+
+# reorder columns
+census <- census[, c(1, 14:15, 13, 2:12, 16)]
+```
+
+### Broadband data
+I read an article that broadband internet is not available in all areas of
+California, I therefore decided to add data on broadband availability and see if
+there were any relations with the census data. 
+
+The FCC provides data on availability by census block (which is part of a census 
+tract). Data was therefore grouped and summarized by tract. As the data was 
+skewed, it was decided to calculate the median per tract instead of the mean. 
+Only data for tracts where providers can or do offer consumer service were 
+included. Some other tidying up was done for merging reasons. [(source)](https://www.fcc.gov/general/explanation-broadband-deployment-data) 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_more_Data}
+# load the broadband dataset for California, keeping only the relevant columns
+broadband_ca <- read.csv("CA-Fixed-Jun2016-v2.csv", stringsAsFactors = FALSE
+                         )[,c('DBAName', 'BlockCode', 'TechCode', 'Consumer', 
+                              'MaxAdDown', 'MaxAdUp')]
+
+# replace scientific format with human readable format and add 0 to have the  
+# full 15-digit block code
+broadband_ca$BlockCode <- 
+  paste0("0", 
+         format(broadband_ca$BlockCode, scientific = FALSE), 
+         collapse = NULL)
+
+# isolate first 11 characters for tract code
+broadband_ca$Id <- substr(broadband_ca$BlockCode, 1, 11)
+
+# only keep information for companies that provide broadband to consumers
+broadband_cons <- subset(broadband_ca, Consumer == 1)
+
+# find mean and max upload and download speeds + number of providers per tract
+broadband <- broadband_cons %>% 
+  group_by(Id) %>% 
+    dplyr::summarise(median_down = median(MaxAdDown),
+                    median_up = median(MaxAdUp),
+                    nr_providers = length(unique(DBAName)))
+```
+
+Variables:
+
+* Id (tract id)
+* median_down (median maximum advertised downstream speed/bandwith)
+* median_up (median maximum advertised upstream speed/bandwith)
+* nr_providers
+
+### Voting data
+It seemed interesting how the census and broadban data intereacts with the 
+voting results in the last presidential election. The voting data was provided 
+by precinct instead of census blocks or tracts, therefore the voting results had 
+to be mapped from precincts to census blocks and then summarized by census tracts. 
+Note that precincts can cover multiple blocks and parts of blocks. 
+
+One dataset contained the voting results per precinct. Another contained the
+mapping from precincts to census blocks as well as which part of the
+total registered votes in that precinct were registered in that block. These 
+tables were combined to find the number of total votes for a [particular party](http://statewidedatabase.org/pub/data/G16/G16_SOR_codebook.txt) per 
+census tract. A categorical variable, winner, was added to determine the winner 
+per tract.
+
+Voting variables:
+
+* Id (tract id)
+* total_vote (total number of casted votes)
+* dem (percentage of votes for Democratic Party)
+* rep (percentage of votes for Republican Party)
+* winner (Democrats, Republicans, draw)
+
+Note: 
+
+* Other parties participated as well in the presidential elections, but
+as they received a small % of the votes it was decided to not include them.
+* I have chosen to correct the dataset for voting data which were incorrectly 
+mapped to a water-only tract. I have notified the creators of the dataset. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_evenmore_Data}
+# voting numbers per precinct
+voting <- read.dbf("state_g16_sov_data_by_g16_srprec.dbf", 
+                   as.is = TRUE)
+
+# remove rows with county totals
+voting_ca <- subset(voting, SRPREC != "CNTYTOT")
+
+# only keep precinct number and president voting results & change format
+voting_ca <- voting_ca[,c('SRPREC_KEY', 'TOTVOTE', 'PRSDEM01', 'PRSREP01')]  
+voting_ca$SRPREC_KEY <- as.character(voting_ca$SRPREC_KEY)
+
+# precinct to block mapping
+mapping <- read.dbf('state_g16_sr_blk_map.dbf', as.is = TRUE)
+
+# get percentage of number of registrated voters per block
+mapping$perc <- mapping$BLKREG / mapping$SRTOTREG
+
+# create tract id 
+mapping$tract <- paste0(mapping$FIPS, mapping$TRACT)
+
+# change mapping from 06073009902 to 06073009901 as 06073009902 is water
+mapping$tract <- revalue(mapping$tract, c("06073009902" = "06073009901"))
+
+#select only precint, tract id and percentage columns
+mapping <- mapping[,c(4,15,14)]
+
+# sum percentages and make sure there is only one combination of precint and 
+# tract code
+mapp_perc <- mapping %>% 
+  group_by(tract, SRPREC_KEY) %>% 
+  dplyr :: summarize(perc = sum(perc)) %>% 
+  ungroup()
+
+# remove tract ending on 990000 as these are water only tracts, which cannot 
+# have voting results
+mapp_perc <- subset(mapp_perc, tract != '06015990000')
+
+# change percentage for precincts that were partly incorrectly mapped to water 
+# only tracts
+mapp_perc[(mapp_perc$SRPREC_KEY == '0601515' | 
+             mapp_perc$SRPREC_KEY == '0601507' | 
+             mapp_perc$SRPREC_KEY == '0601508') & 
+            (mapp_perc$tract == '06015000201' | 
+               mapp_perc$tract == '06015000202' | 
+               mapp_perc$tract == '06015000105'),
+          'perc'] <- 1.0
+
+# join voting results and tract on precinct keys
+voting_block <- left_join(voting_ca, mapp_perc, by = 
+                            c('SRPREC_KEY' = 'SRPREC_KEY'))
+
+# adjust vote numbers per block for precinct percentage
+voting_perc <- cbind(voting_block[,'SRPREC_KEY'], 
+                     voting_block[, c('TOTVOTE', 'PRSDEM01', 'PRSREP01')] * 
+                       voting_block[,'perc'], voting_block[,'tract'])
+
+# sum the number of votes per tract and divide them by the total vote
+voting_tract <- voting_perc %>% 
+  group_by(voting_block[,'tract']) %>% 
+  dplyr :: summarise(total_vote = sum(TOTVOTE),
+            dem = (sum(PRSDEM01) / sum(TOTVOTE)) * 100,
+            rep = (sum(PRSREP01) / sum(TOTVOTE)) * 100
+            )
+
+# add column for winner per tract
+voting_tract$winner <- ifelse(voting_tract$dem > voting_tract$rep, 
+                              "Democrats", 
+                              ifelse(voting_tract$dem < voting_tract$rep, 
+                                     "Republicans", 
+                                     ifelse(voting_tract$dem == voting_tract$rep, 
+                                            "draw", NA)))
+
+# rename columns
+names(voting_tract)[1] <- 'Id'
+```
+
+```{r echo=FALSE, Merge_Datasets}
+# combine census and voting data
+census_voting <- left_join(census, voting_tract, by = "Id")
+
+# all combined data
+data <- left_join(census_voting, broadband, by = 'Id')
+
+# save combined datasets to csv
+write.csv(data, file = 'project5_data.csv')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# upload data, remove first column added when transforming to csv
+data <- read.csv('project5_data.csv', stringsAsFactors = FALSE)[,c(2:24)]
+
+# replace scientific format with human readable format and add 0 to have the  
+# full Id and county values
+data$Id <- paste0("0", format(data$Id, scientific = FALSE), 
+         collapse = NULL)
+data$county <- paste0('0',data$county, collapse = NULL)
+```
+
+## Univariate Analysis
+The three different datasets were joined, which left us with a dataset of 8,057 
+observations for 23 variables. California has 8,057 census tracts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dim(data)
+```
+
+As the social and economic variables come from a census, it can be expected that 
+not all variables are available for each census tract. I will explore what data 
+is missing when looking at the individual variables. 
+
+### Counties
+California has 58 counties. Not ever county has the same number of tracts, it 
+varies widly from only 1 (Alpine & Sierra) to 2,346 tracts (LA). The median is 
+42 tractcs and the mean 138.9. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# get the number of tracts per county
+tracts_county <- 
+  data %>% 
+  group_by(county_name) %>% 
+  dplyr :: summarise(nr_of_tracts = n())
+  
+summary(tracts_county$nr_of_tracts)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# barplot of counties ordered by number of tracts
+ggplot(data = tracts_county, 
+       #to order by count instead of name
+       aes(x = reorder(county_name, -nr_of_tracts), 
+           y = nr_of_tracts)) + 
+  geom_bar(stat = 'identity') +
+  # get readable county names
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.4)) +
+  scale_y_continuous(breaks = seq(0, 2400, 100))
+```
+
+### Census data
+#### Population
+The population in the tracts is also very diverse. From 0 to 39,454 people. 
+The mean and median are 4,769 and 4,528 respectively. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$population)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram for population size
+histogram(data, "population", 500, 
+          TRUE, 12000, 1000,
+          TRUE, 2000, 100,
+          TRUE, data$population, 0.99)
+```
+
+As the distribution is long tailed I zoomed in to the data so it only shows 99% 
+of the values. Most tracts have a population between 3,000 and 6,000 people. 
+The optimun size of a tract is [4,000 people](https://www.census.gov/geo/reference/gtc/gtc_ct.html). 
+45 tracts have a population of zero. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# find number of tracts with zero population
+length(which(data$population == 0))
+```
+
+##### Zero population
+Looking into this further I found that California has 21 tracts that are [water-only](https://www.census.gov/geo/maps-data/data/tallies/tractblock.html). 
+These tracts can be identified by the fact that their ids are in the range of the 
+9900s. Next to that tracts that have an id in the range of 9800s are special
+land-use census tracts, such as large parks or employment areas with little or 
+no residential population [(source)](https://www.census.gov/geo/reference/gtc/gtc_ct.html).
+I added a variable to mark these special tracts. 
+
+Variable added:
+
+* special (values: water, special_land or regular)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# mark tracts as water-only, special land use or regular
+data$special <- ifelse(substr(data$Id,6,7) == '98', 'special_land',
+                            ifelse(substr(data$Id,6,7) == '99', 'water', 
+                                   'regular'))
+
+# create bar plot for tracts with zero population
+bar(subset(data, population == 0), 20, 2)
+```
+
+As can seen above, most of the tracts that have zero population are indeed either 
+water-only or special land use tracts. However three tracts, 2 in LA and 1 in San 
+Diego have no special indication. I looked up the tracts on this [website](https://censusreporter.org/profiles/14000US06037504102-census-tract-320000-los-angeles-ca/), where you can see the tract on a map. The tract in San Diego is water, one of 
+the LA tracts is the area where Universal Studios is located and the other tract 
+seems to be a business park. In all three cases it seems the tract id should 
+start with either 9900 or 9800.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, include = FALSE}
+# tract ids that have no population and are not marked as water or special land
+subset(subset(data, population == 0), special == 'regular')$Id
+```
+
+I used the tigris library to find all counties and tracts in California and their 
+lat and longs. Please note that only information is available for 8043 tracts, 
+14 tracts are water-only and are not included in the tigris library. I assume 
+they are out of range of the state land boundaries. In order to plot the 
+information I used this [tutorial](http://eriqande.github.io/rep-res-web/lectures/making-maps-with-R.html).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# lat & long for the counties and tracts to be able to show borders
+counties_all <- tigris :: counties(state = 06, cb = TRUE)
+tracts_all <- tigris :: tracts(state = '06', county = c(codes$county_id), cb = TRUE)
+
+# changes data from SpatialPolygonsDataFrame to regular (and plotting friendly)
+# dataframe 
+ggcounties <- fortify(counties_all, region = 'GEOID')
+ggtract <- fortify(tracts_all, region = "GEOID")
+
+# combine ggtract with data
+data_geo <- left_join(ggtract, data, by = c('id' = 'Id'))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# show zero population tracts on map of California
+zero_pop <- subset(data_geo, population == 0)
+map(ggcounties, zero_pop, TRUE, 'special')
+```
+
+As can be clearly seen Lake Tahoe is made up of water-only tracts. The nothern 
+islands of the Channel Island which are a [national park](https://en.wikipedia.org/wiki/Channel_Islands_(California)#Characteristics) 
+are clearly marked as special land use tracts. Most special tracts lie in the 
+Los Angeles county. Not all tracts are visible either because they are small or 
+lie beyond the state land borders (for water-only tracts).
+
+I decided to remove these 45 tracts due to their zero population, which results 
+in a dataset of 8012 tracts (+ 24 variables).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create dataset with removed tracts
+no_pop <- subset(data, population == 0)
+no_pop$type <- 'no_population'
+
+# remove zero population tracts, keeping 8012 tracts
+data <- subset(data, population > 0)
+dim(data)
+
+# also remove zero population tracts from dataset with lat & longs
+data_geo <- subset(data_geo, population > 0)
+```
+
+#### Square miles
+The size of the tracts is very diverse. The smallest track represent a 2 by 2
+block in San Francisco while the largest tracts are close to 6,950 square miles 
+(one tract contains Death Valley NP and the other Mojavo National Preserve). 
+75% of the tracts have a size of less than 1.787 square miles (3rd quantile).  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$square_miles)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram square miles
+histogram(data, 'square_miles', NULL, xscale = FALSE, yscale = TRUE, 
+          coord = FALSE, yend = 1500, ystep = 200) 
+```
+
+Even when the axis are transformed (log10), the distribtuion still has a long 
+tail. 86% of the tracts are smaller than 5 square miles. Smaller tracts are more
+common than large tracts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate % of tracts that are equal or smaller than 5 square miles
+nrow(subset(data, square_miles < 5)) / nrow(data) * 100
+```
+
+#### Population per square mile
+As the distributions for both population and square miles are very diverse, it
+is unsurprisely that the population per square miles is also very diverse. From 
+0.37 to 173,337 people per square mile. With a median of 6,316 and a mean of 
+8,607 people. Numbers like 173,337 people per square mile seems very high, but 
+can be explained by highly dense populated small tracts (couple of blocks) in 
+cities.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$pop_sqmiles)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram population per square mile
+histogram(data, 'pop_sqmiles', NULL, xscale = FALSE, 
+          yscale = FALSE, coord = FALSE)
+```
+
+The distribution is a mirror of the square miles distribution. Most tracts have 
+a population between 2,500 and 10,000 people per square mile. 
+
+#### Households
+Households can be split up in two groups, households that are owning their house 
+and households that are renting. The average home ownership for all tracts is 
+54.2%, the median is 56.9%. Data is not available for 28 tracts. 
+
+Variable added:
+
+* owner (percentage of households that own their house)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate which percentage of renter or owner households
+data$owner <- (data$owner_hh / data$total_hh) * 100
+
+# calculate summary for both variables
+summary(data$owner)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram household owner
+histogram(data, 'owner', 10, xscale = TRUE, xend = 100, xstep = 10,  
+          yscale = FALSE, yend = 1200, ystep = 200, coord = FALSE)
+```
+
+Percentage home ownership is sort of linear till 70%, when it drops. Interesting 
+to see is that there are more tracts were all households are renters (0% owner) 
+than tracts where everybody is an owner, which makes sense as it is less likely 
+that everyone owns their house in a particular tract but especially in cities it 
+is not as unlikely that everybody rents. 
+
+#### Household size
+The median and mean household size is 3 persons (rounded). Data is not available
+for 30 tracts.
+
+``````{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$total_hhsize)
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram household size
+histogram(data, 'total_hhsize', 1, xscale = TRUE, xend = 10, xstep = 1,  
+          yscale = FALSE, coord = FALSE)
+```
+
+When we look at the histogram is seems that very few tracts (61) have an average 
+household size of more than 5 members. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+length((subset(data, total_hhsize > 5))$Id)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data[,c('owner_hhsize', 'renter_hhsize')])
+```
+
+Renter households are slightly larger than owner households, but the range is 
+larger for owner households.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# distribution of household sizes for renter and owner households
+ggplot(data = data) +
+  geom_histogram(aes(x = renter_hhsize), binwidth = 0.1, fill = 'blue',
+                 position="dodge", alpha = 1/5) +
+  geom_histogram(aes(x = owner_hhsize), binwidth = 0.1, fill = 'green',
+                 position="dodge", alpha = 1/5) +
+  scale_x_continuous(labels = comma, breaks = seq(0, 12, 1)) +
+  coord_cartesian(xlim = c(0, quantile(data$owner_hhsize, 0.999, 
+                                       na.rm = TRUE))) +
+  xlab('household size')
+```
+
+When looking at the distribtutions for both renter (blue) and owner (green) 
+household sizes, we see that the owner distribtuion is taller and peaks around 3
+people, while for renters there is a less distinguish peak. There are more renter 
+households with 4 or 5 people, which is kind of surprising as you would expect 
+that people who own their house to be older, financially able to buy a house and 
+maybe have live in children than in general younger renters. However with the 
+current housing situation in parts of California (like the San Francisco Bay 
+area) this general rule might not be valid as more people are sharing housing 
+with non-family members. 
+
+The peak at 0 is when there are really zero renter or owner households in that 
+tract, or a very low number and then the variable was not computed by the Census
+Burea. 
+
+#### Median income
+The median income shows which income was at the midpoint of a frequency 
+distibution. For California there are quite some high outliers which pulls the 
+mean up. The median and mean of the median income are respectively 60,530 and 
+67,334 dollar. With 75% of the tracts having a median income of 84,704 dollar or 
+less. For 53 tracts there is no median income data available.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$median_income)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram median income with log10 x axis
+histogram(data, 'median_income', NULL, xscale = FALSE, yscale = TRUE, 
+          yend = 1000, ystep = 100, coord = FALSE)
+```
+
+As the distribution is long tailed, the x axis is transformed (log 10) and we 
+see a (somewhat whimsical) normal distribution. There is a huge jump at 30,000 
+dollar of tracts that have that median income.
+
+##### Missing values
+There are 53 missing values for the median income. I used the [naniar library](https://cran.r-project.org/web/packages/naniar/vignettes/naniar-visualisation.html) 
+to visualize the other variables that are missing for these 57 tracts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# find number of missing values per tract
+gg_miss_var(subset(data, is.na(median_income)))
+```
+
+The plot shows the number of other variables (especially census variables) that 
+are also missing. When scrolling to the data it became clear that the tracts that 
+that are missing census variable are missing multiple. The missing voting 
+variables seem to be affecting other tracts. 
+
+Of the variables that have no missing values the participation rate stands out 
+as it is the only census variable that has no missing values (note that population 
+variable already has been cleaned for zero values). 
+
+
+#### Participation rate
+The paricipation rate is clustered around the mean and median, that lie both 
+around 63-64%. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$participation_rate)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram participation rate
+histogram(data, 'participation_rate', 1, xscale = TRUE, xend = 100, xstep = 5,
+          yscale = TRUE, yend = 500, ystep = 50, coord = FALSE)
+```
+
+The distribution looks normal. It is interesting that there are a number of 
+tracts that have a partipation rate of 0 or 100%. Wondering about this as 
+participation rate did not have any missing values for the 53 tracts that were 
+missing many other (census) variables. 
+
+##### 0% & 100%
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create subset for tracts that have a participation rate of 0 or 100
+data_part <- subset(data, (participation_rate == 0 | 
+                             participation_rate == 100))
+
+# create bar plot for tracts with 0 or 100% participation rate
+bar(data_part, 5, 1) + 
+  # I used this to show both cases in one chart
+  facet_grid(~participation_rate)
+```
+
+I noticed that almost all tracts that have a participation rate of 100% are 
+special land tracts. The tract in San Diego, is the airport so this probably 
+should also be special_land tract.
+
+I looked up some of the 0% tracts [here](https://censusreporter.org/profiles/14000US06037574700-census-tract-980014-los-angeles-ca/) 
+and found that often only a prison or detention center was located in these
+tracts (regardless if they were marked special_land or not). I also noticed that 
+when looking up some of these tracts, that their population is mainly male. I 
+therefore added a variable for the male percentage of the population to this 
+subset. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# upload data on gender
+gender <- read.csv('ACS_15_5YR_S0601_with_ann.csv', skip = 1,
+                   na.strings = '-', stringsAsFactors = TRUE
+                   )[, c('Id', 'Total..Estimate..SEX...Male')]
+
+# change Id to 11 digits tract id
+gender$Id <- substr(gender$Id, 10, 21)
+
+# rename column
+names(gender) <- c('Id', 'male')
+
+# join male column with data dataset
+data_part <- left_join(data_part, gender, by = c('Id' = 'Id'))
+
+# plot 0% participation tracts for their male percentage
+histogram(subset(data_part, participation_rate == 0), 'male', 1, 
+          xscale = FALSE, yscale = TRUE, yend = 11, ystep = 1, coord = FALSE)
+```
+
+Only two tracts have a lower male percentage than expected. The tract with 50% 
+is a special area and is a national park. The second lowest is a tract where only 
+a VA medical center is located. All other tracts seem to be tracts with either 
+prisons or detention centers. 
+
+The tracts for which the median income was missing seemed to overlap with the 
+tracts that have a 0 or 100% participation rate as can be seen in the plot below 
+that shows missing values for this subset. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# missing values for 0 or 100% participation rate tracts
+gg_miss_var(subset(data_part))
+```
+
+I therefore decided to drop the tracts for which the median income is missing, 
+which leaves us with a dataset of 7,959 tracts (+ 25 variables).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# missing median income tracts
+median <- subset(data, is.na(median_income))[,c(1:24)] # remove last added column
+median$type <- 'no_income'
+
+# combine all tracts that have missing variables
+missing <- rbind(no_pop, median)
+
+# remove tracts from dataset
+data <- subset(data, !is.na(median_income))
+dim(data)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$participation_rate)
+```
+
+The statistics have not changed a lot, except that the min value is no longer 0, 
+and the 100% partipation rates are only for special_land tracts in parks.
+
+#### Unemployment rate
+The unemployment rate ranges from 0 to 60.5%. The mean unemployment rate is 
+10.16% and the median 9.30%. There is a very long long tail. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$unemployment_rate)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram unemployment rate
+histogram(data, 'unemployment_rate', 1, 
+          TRUE, 28, 2, 
+          TRUE, 800, 100,
+          TRUE, data$unemployment_rate, 0.99)
+```
+
+When only taking into account values that lie in the 99% range, we still see a 
+longtail, but most tracts have a unemployment rate that is less than 16%. 
+
+#### Poverty rate
+The poverty rate ranges from 0 to 91.8%. The mean is 16.49% and the median is 
+13.30%. Also here there is a long tail. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$poverty_rate)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram poverty rate
+histogram(data, 'poverty_rate', 1, 
+          TRUE, 55, 5, 
+          TRUE, 400, 50,
+          TRUE, data$poverty_rate, 0.95)
+```
+
+Even when looking at only 95% of the values there is still a long tail. Most 
+tracts have a poverty rate between 5 and 10%. It is not surprising that there is 
+a longtail as higher poverty rates are more unlikely.
+
+### Broadband data
+#### Download speed
+Note that broadband data had to be summarized, the median was calculated per 
+tract as the distribution on block level was very long tailed. The median 
+advertised download speed ranges between 2 and 40 Mbps. There is one missing 
+value.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$median_down)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram broadband speed for downloads
+histogram(data, 'median_down', 1, 
+          TRUE, 40, 5, 
+          TRUE, 5000, 500,
+          FALSE)
+```
+
+The median and 3rd quartile are both 15. This is also clear from the histogram, 
+there are also peaks at 12, 25 and 30 Mbps.
+
+#### Upload speed
+Median advertised upload speed ranges from 1 to 20 Mbps. The mean and median 
+are respectively 2 and 2.8 Mbps. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$median_up)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram broadband speed for uploads
+histogram(data, 'median_up', 1, 
+          TRUE, 20, 2, 
+          TRUE, 5000, 500,
+          FALSE)
+```
+
+There are only 384 (4.8%) tracts that have a median upload speed higher than 3 
+Mbps. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+nrow(subset(data, median_up >3))
+```
+
+#### Number of providers
+Overal, tracts have on average ~7 providers (also the median).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$nr_providers)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histogram # of broadband providers
+histogram(data, 'nr_providers', 1, 
+          TRUE, 14, 1, 
+          TRUE, 2750, 250,
+          FALSE)
+```
+
+50% of the tracts have between 6 and 8 providers (IQR). 
+
+### Voting data
+#### Voting participation
+It seemed interesting to see the voting participation, calculating the total 
+votes casted divided by the population per tract.
+
+Variable added:
+
+* voting_part (total votes divided by population)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create variable for voting participation
+data$voting_part <- (data$total_vote / data$population) * 100
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(data$voting_part)
+```
+
+The median and mean are ~ 39%, meaning that 39% of the population per tract voted. 
+Data for 31 tracts is missing.
+
+As population is made up also from non-eligble voters (children etc) we are not 
+expecting to see 100%+ values. 11 tracts have a a voting participation of more 
+than 100%, but more tracts might be affected. I can think of two reasons why this 
+is happening:
+
+1. Votes might have been assigned incorrectly when mapping from precincts to 
+blocks. I have gone over this a couple of times and I cannot find where it goes 
+wrong in my mapping, so I am not sure if there is something in the original 
+mapping files or my method. 
+2. Population and total votes number come from different datasets, so maybe 
+numbers are assigned to wrong tracts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# how many tracts have a voting participation of more than 100
+nrow(subset(data, voting_part > 100))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# subset with only percentages lower or equal to 100
+vot_100 <- subset(data, voting_part <= 100) 
+summary(vot_100$voting_part)
+```
+
+Removing these 11 tracts, does not do much to the median and mean. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# voting participation distribution
+histogram(vot_100, 'voting_part', 5, 
+          TRUE, 120, 10, 
+          TRUE, 1000, 100,
+          FALSE)
+```
+
+The distribution looks relatively normal, with not a clear peak though. 75% of 
+the tracts have a voting participation of 50% or less.
+
+##### Missing values
+Data for 31 tracts is missing. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot tracts with missing voting data
+vparticipation <- subset(data, is.na(voting_part))
+
+data_geo <- left_join(ggtract, vparticipation, by = c('id' = 'Id'))
+
+map(ggcounties, subset(data_geo, !is.na(county)), FALSE, 'orange') +
+  # zoom in south of California where the tracts are located
+  coord_fixed(xlim = c(-120, -114),  ylim = c(32.5, 35), ratio = 1.3)
+```
+
+Plotting these tracts on a map shows that the whole county of Imperial is missing 
+(the white tract was already dropped before) plus one tract in LA. Checking back 
+with the database it notes that the data is not yet available for these tracts.
+
+All census and broad variables are available for these tracts, so I am not 
+dropping them. When looking at voting data these tracts will not be included.  
+
+#### Democrats vs Republicans
+The added variable 'winner', shows which party got the most votes. In almost 
+6,500 tracts the Democratic party got the most votes. That is 80% of thet racts. 
+(Tracts without a winner are in Imperial & LA, see above.)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot winner per tract
+ggplot(data = data, aes(x = winner)) +
+  stat_count(labels = TRUE) +
+  scale_y_continuous(breaks = seq(0, 6500, 500))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# % of tracts where the Democratic party got the most votes
+nrow(subset(data, winner == 'Democrats')) / nrow(data) * 100
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate which percentage of votes are for the R o D party
+summary(data[, c('dem', 'rep')])
+```
+
+For all tracts the median and mean percentage votes for Democrats are 64.34 and 
+62.13% respectively. The median and mean are 25.83 and 28.59% for the Republicans.
+The Democratic party is more popular than the Republican party in the Californian
+tracts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# histograms dems and reps
+dems <- histogram(subset(data, winner == 'Democrats'), 'dem', 5, TRUE, 100, 5,
+                  TRUE, 900, 100, FALSE)
+
+reps <- histogram(subset(data, winner == 'Republicans'), 'rep', 5, 
+                  xscale =TRUE, 100, 5, yscale = FALSE, coord = FALSE)
+
+grid.arrange(dems, reps)
+```
+
+The histograms show the distribution for the tracts were the party was the 
+largest. Please note that not 50% of the votes is needed as multiple parties 
+participated. It is clear that if the Democrats won, they mostly did with a 
+higher percentage of the votes on average 68% vs 54% for the Republicans. The 
+Republican distribution peaks before 50%, while the Democrats one only peaks at
+70% and its distribution is more level. Also the maximal percentage of votes is
+lower for the Republicans, 10%-point.
+
+``````{r echo=FALSE, message=FALSE, warning=FALSE}
+# find median and mean for tracts where the Democratic party was the largest
+summary(subset(data, winner == 'Democrats')$dem)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# find median and mean for tracts where the Republican party was the largest
+summary(subset(data, winner == 'Republicans')$rep)
+```
+
+### Summary
+#### Structure
+All together 45 (for having no population value) plus 53 tracts (for not having 
+median income value) have been dropped. Which leaves us with data for 7959 tracts 
+(+ 26 variables).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dim(data)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# combine ggtract with data
+missing_geo <- left_join(ggtract, missing, by = c('id' = 'Id'))
+
+# plot all removed tracts
+map(ggcounties, subset(missing_geo, !is.na(type)), TRUE, 'type')
+```
+
+The dropped tracts are shown on the map. As can be seen it is only a couple of 
+tracts per county, except for LA but LA has many tracts. We also know that these 
+dropped tracts are either not inhabited or are water, special areas (national 
+parks, business parks or jails/detention centers). Next to their special 
+character also the multiple missing variables for these tracts justifies to not 
+take them into account in the exploration.
+
+There are 26 variables:
+
+* Tract info - 4 (Id, county, county_name, special)
+* Census variables - 14 (population, total_hh, owner_hh, renter_hh, total_hhsize, 
+owner_hhsize, renter_hhsize, owner, median_income, participation_rate, 
+unemployment_rate, poverty_rate, square_miles, pop_sqmiles)
+* Broadband variables - 3 (median_down, median_up, nr_providers)
+* Voting variables - 5 (total_vote, dem, rep, winner, voting_part)
+
+When plotting the tracts on a map, 6 addditonal variables (including langitude 
+and longitude coordinates) are needed. 
+
+#### Interesting variables
+I am mostly interested in how population per square miles interacts with the other 
+variables. And also how the median income and the winner (Democrats/Republicans) 
+relate to other variables. I am also interested if certain tracts have less or 
+more access to broadband. 
+
+The first exploration has shown that the census tracts in California are very 
+diverse in size, income, politic color but also other social and economic 
+variables. It will be interesting to see if there are difference between 
+poor/rich tracts, Democrat or Republican tracts and low/high populated tracts.
+
+#### New variables
+Five variables were created:
+
+* pop_sqmiles (population divided by square miles)
+* winner (categorical variable showing party with most votes)
+* special (specify track as water_only, special_ land or regular)
+* voting_part (total votes divided by population)
+* owner (% of households that own their housing)
+
+## Bivariate Analysis
+I decided not to look at variables that are absolute numbers (like population, 
+household size, the total number votes and square miles) as the tracts are so 
+diverse. It seems more logic to look at these variables adjusted for size (like 
+owner, population per square mile and voting participation). 
+
+The correlation matrix below shows that some variables correlate with other 
+variables (shown in dark red or blue), but others clearly do not correlate at all 
+(faint blue or red). Blue shows a positive correlation, red a negative one.
+ 
+```{r echo=FALSE, message=FALSE, warning=FALSE, results = 'hide'}
+# include only numeric columns
+data_num <- data[, sapply(data, is.numeric)]
+
+# create correlation matrix
+data_cor <- psych :: lowerCor(data_num)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# show correlation matrix graphically
+cor.plot(data_cor, n = 22, xlas = 2, diag = FALSE, 
+         numbers = TRUE, cex = 0.5, cex.axis = 0.8, 
+         select = c("pop_sqmiles", "median_income",  "total_hhsize", 
+                    "owner_hhsize", "renter_hhsize", "owner", "participation_rate", 
+                    "unemployment_rate", "poverty_rate", "voting_part", "dem", 
+                    "rep", "median_down", "median_up", "nr_providers"))
+```
+
+### Broadband variables
+Interesting is that the broadband variables (median_down, median_up and 
+nr_providers) show no meaningful correlation at all with the other variables in 
+the dataset, except among themselves. Up and download speeds are not even 
+very strongly correlated (0.59). 
+
+I was kind of expecting that higher broadband speeds would be available in higher 
+populated and maybe higher income tracts. It might be that this been influenced
+by the fact that the median per tract had to be calculated. 
+
+### Population per square mile
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# get all lat & long from CA cities from the maps library
+# numbers are old but the same cities are still the largest
+data(us.cities)
+ca_cities <- subset(us.cities, country.etc == 'CA')
+
+# selecting cities with a population higher than 300,000 in df 
+top_cities <- subset(ca_cities, pop > 300000)
+
+write.csv(ca_cities, 'ca_cities.csv')
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# join data with tract
+data_geo <- left_join(ggtract, data, by = c('id' = 'Id'))
+
+# create intervals for cut_format function (based on cut_number)
+breaks <- c(0, 5, 25, 100, 250, 1500, 5000, 10000, 175000)
+
+# plot population per square mile
+map(ggcounties, data_geo, TRUE, 'cut_format(pop_sqmiles, breaks)') +
+  scale_fill_brewer('population per square mile', 
+                    palette = 'GnBu', na.value = 'grey') +
+  # add top 12 cities (300.000 people or more)
+  geom_point(data = top_cities, mapping = aes(x = long, y = lat, group = NULL), 
+             size = 0.1, color = 'red')
+```
+
+We see that the areas that have a high population density are around the big 
+cities (+300,000, from maps library). San Francisco, Oakland and San Jose 
+in the Bay area, Sacramento in Nothern California. Fresno and Bakersfield in the 
+Valley. Anaheim, Santa Ana, LA, Anaheim and Riverside in the larger LA area and 
+San Diego in the South.
+
+The cities are indicated as point, they can only be mapped to one tract while 
+multiple tracts can make up a city. I therefore looked if there was another way 
+to visualize this.
+
+#### Vs type
+I looked for data marking rural and urban areas.The [Census Bureau](https://www.census.gov/geo/reference/ua/urban-rural-2010.html) 
+identifies two types of urban areas:
+
+* urbanized areas, 50,000 or more people
+* urban clusters, at least 2,500 and less than 50,000 people
+
+Rural areas are areas that are not included in one of the two urban types. 
+
+I again used the tigris library to find the urbanized areas and urban clusters.
+I used this [tutorial](https://www.nceas.ucsb.edu/scicomp/usecases/point-in-polygon)
+to find a way to know if urbanized areas or urban clusters are located in a 
+tract. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# find all urbanized areas and urban clusters
+urban_all <- tigris :: urban_areas(cb = TRUE)
+
+# find all urbanized areas and clusters in CA
+# some names have two states seperated by --, selecting 6 last characters if --
+# present we take the state abbreviation before -- otherwise just the last 2 
+# characters
+urban_all$state <- str_sub(urban_all$NAME10, -6)
+urban_all$state <- ifelse(grepl('--', urban_all$state, fixed=TRUE) == TRUE, 
+                          substr(urban_all$state, 1, 2), 
+                          substr(urban_all$state, 5, 6))
+
+# select only areas and clusters in California
+urban_ca <- subset(urban_all, state == "CA")
+
+# add city code to tracts_all table, so we know which tracts are part of 
+# an urbanized area of urban cluster
+proj4string(urban_ca) <- proj4string(tracts_all)
+tracts_all$city <- over(tracts_all,urban_ca)$AFFGEOID10
+
+# change data from SpatialPolygonsDataFrame to regular dataframe 
+tracts_city <- as.data.frame(tracts_all[, c('COUNTYFP', 'GEOID', 'city')])
+
+# add area (U) or cluster (C) indicator
+urban_city <- as.data.frame(urban_ca)[, c('AFFGEOID10', 'GEOID10', 
+                                          'NAME10', 'UATYP10')]
+tracts_city <- left_join(tracts_city, urban_city, 
+                         by = c('city'= 'AFFGEOID10'))
+
+# replace NA cells with 'R' for rural tracts
+tracts_city[, 'UATYP10'][is.na(tracts_city[, 'UATYP10'])] <- 'R'
+
+# change column name (rural/urban)
+names(tracts_city)[6] <- 'type'
+
+# merge with the rest of the data
+data <- left_join(data, tracts_city[,c('GEOID','type')], by = c('Id' = 'GEOID'))
+
+data$type <- ifelse(data$type == 'U', "urbanized areas", 
+                    ifelse(data$type == 'C', "urban clusters", 'rural'))
+
+# make type variable a factor with levels from urbanized to rural
+data$type <- factor(data$type, levels = c('urbanized areas', 
+                                          'urban clusters', 'rural'))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# combine ggtract with data
+data_geo <- left_join(ggtract, data, by = c('id' = 'Id'))
+
+# plot rural/urban areas on map
+map(ggtract, data_geo, TRUE, 'type') +
+    scale_fill_manual(values = c('dodgerblue4', 'dodgerblue2', 'lightskyblue'), 
+                      na.value ='wheat')
+```
+
+Plotted we see the same pattern, in dark blue you see the urbanized areas 
+which are indeed where we expect them to be but are more extensive as whole 
+tracts are now marked. Same is true for the urban clusters. Few tracts in the 
+north and east of the state have no urban cluster or urbanized areas.
+
+I added this variable as a second categorical variable so that tracts can be 
+compared on the type of tract. 
+
+Variable added:
+
+* type (urbanized areas, urban clusters, rural)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot of population per square mile vs type
+boxplot(data, 'type', 'pop_sqmiles', 1/10, yscale = TRUE, 30000, 5000, 
+        coord = TRUE, data$pop_sqmiles, 0.95)
+```
+
+As expected the median population per square mile is much higher in urbanized 
+areas than in urban clusters and rural tracts caused by smaller tracts with 
+bigger poulations. Only 95% of the values are shown as there are many outliers 
+for the urbanized areas tracts.
+
+#### Vs median income
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# population per square miles vs median income
+scatter(data, xvar = 'pop_sqmiles', yvar = 'median_income', 1/25, 
+        xscale = FALSE, yscale = FALSE, coord = FALSE)
+```
+
+There is a weak negative correlation (-0.26) between the median income and 
+population per square mile. As both variables are longtailed, they are plotted
+both on a log 10 scale. The correlation seems to be positively at low levels, but 
+becomes more dense (most tracts have pop_sqmiles between 5 and 10,000) and gets 
+a negative direction. Incomes under 30,000 dollar are more likely to be in highly
+populated tracts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for median income per type
+boxplot(data, xvar = 'type', yvar = 'median_income', 1/10, 
+        yscale = TRUE, 250000, 25000, coord = FALSE)
+```
+
+Median incomes are higher in urbanized areas (U) than in the urban clusters and 
+rural tracts. The median incomes in the last two are pretty similar. 
+
+#### Vs winner
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# only tracts for which there are voting results
+data_vot <- subset(data, !is.na(winner))
+
+# boxplot of population per square mile vs winner
+boxplot(data_vot, 'winner', 'pop_sqmiles', 1/10, yscale = TRUE, 30000, 5000, 
+        coord = TRUE, data$pop_sqmiles, 0.95)
+```
+
+If we look at the population per square mile, it is clear that in general the 
+Democratic tracts are more densely populated than the Republican tracts. Note 
+that only 95% of the values are shown due to high outliers for the Democrat 
+tracts.
+
+#### Vs owner
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# population per square miles vs ownership
+scatter(data, 'pop_sqmiles', 'owner', 1/25, 
+        xscale = FALSE, yscale = FALSE, coord = FALSE)
+```
+
+There is a negative correlation between population per square mile and ownership 
+(-0.55). Meaning that more people live in a tract, ownership by households is
+lower. This pattern becomes stronger at 5,000 people per square mile. This makes 
+sense as we would expect house ownership to be lower in less populated areas. 
+Especially as in parts of California housing prices are the highest in the 
+country and owning a house is not a possibility for a large part of the population. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for ownership per type
+boxplot(data, 'type', 'owner', 1/10, yscale = TRUE, 100, 10, coord = FALSE)
+```
+
+And indeed if we look at the three different types, median home ownership is 
+highest in rural areas, slightly above 70% and lowest in urbanized areas at 
+slightly above 55%. 
+
+#### Vs poverty rate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# population per square miles vs poverty rate
+scatter(data, xvar = 'pop_sqmiles', yvar = 'poverty_rate', 1/25, xscale = FALSE, 
+        yscale = FALSE, coord = TRUE, col = data$poverty_rate, ci = 0.99)
+```
+
+The correlation between the poverty rate and population per square mile is weak 
+(0.31). It seems that till 1,000 people per square mile the relation is 0, but
+it becoome positive after 5,000 people although there it is still very disperse.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for poverty_rate per type
+boxplot(data, 'type', 'poverty_rate', 1/5, yscale = TRUE, 100, 5, coord = FALSE)
+```
+
+Median poverty rate is highest in tracts that are marked as urbanized clusters 
+(17.4%) and lowest in urbanized areas (12.9%). It is good to notice that the 
+range as well as the number of outliers is larger in tracts marked as urbanized 
+areas.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate medians for the three types
+data %>% group_by(type) %>% 
+  dplyr :: summarise(median_poverty = median(poverty_rate))
+```
+
+#### Vs uneployment rate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for poverty_rate per type
+boxplot(data, 'type', 'unemployment_rate', 1/10, yscale = TRUE, 36, 2, coord = TRUE,
+        data$unemployment_rate, 0.999)
+```
+
+Unemployment rates are highest in rural areas (11.8%), but only slightly higher 
+than in urban clusters (11.6%). For 75% of the urbanized areas tracts the rate is 
+under 12.5%, but most top outliers are also in this group.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate medians for the three types
+data %>% group_by(type) %>% 
+  dplyr :: summarise(median_poverty = median(unemployment_rate))
+```
+
+Combining both results it seems that unemployment is less correlated with poverty 
+in rural areas than in urban clusters.
+
+#### Vs voting participation
+Note that only tracts with a voting participation of 100% or less are taken into
+account.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# only tracts that have a voting participation of lower or equal than 100%
+data_perc <- subset(data, voting_part <= 100)
+
+# population per square miles vs voting participation
+scatter(data_perc, xvar ='pop_sqmiles', yvar = 'voting_part', 1/20, xscale = FALSE, 
+        yscale = FALSE, coord = FALSE)
+```
+
+There is a weak negative correlation between the people per square mile and voting 
+particpation (-0.29). If a tract has more people per square mile the voting 
+participation is lower.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for voting participation per type
+boxplot(data_perc, 'type', 'voting_part', 1/5, 
+        yscale = TRUE, 100, 5, coord = FALSE)
+```
+
+Voting participation increases with less urbanization, from 37.5% in urbanized 
+areas to 47.5% in rural areas.
+
+#### Vs % party votes
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# population per square miles vs Republican votes
+scatter(data_perc, xvar ='pop_sqmiles', yvar = 'rep', 1/20, xscale = FALSE, 
+        yscale = FALSE, coord = FALSE)
+```
+
+There is a negative relationship (-0.51) between the population per square mile
+and the perentage of the votes for the Republican party. Relationship becomes
+more strong when the density is higher, this is probably due that the most dense
+areas are voting Democratic. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for party % per type
+rep <- boxplot(data, 'type', 'rep', 1/10, yscale = TRUE, 100, 5, coord = FALSE)
+dem <- boxplot(data, 'type', 'dem', 1/10, yscale = TRUE, 100, 5, coord = FALSE)
+
+grid.arrange(rep, dem, ncol = 2)
+```
+
+It is pretty clear that the Republican party median percentage of the votes is 
+half in urban areas. The opposite is true for the Democratic party. The Republican
+party is also more popular in urban clusters.
+
+#### Vs household size
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for household size per type
+boxplot(data, 'type', 'total_hhsize', 1/10, yscale = FALSE, coord = FALSE)
+```
+
+Households seems to be the largest in the urbanized areas.They also have the 
+most outliers (households with more than 5 members). 
+
+### Median income
+```{r echo=FALSE, Bivariate_Plots}
+# show median income on map of California to show income distribution
+map(ggcounties, data_geo, TRUE, 
+    'cut_number(median_income/1000, 7, boundary = 0)') +
+  scale_fill_brewer('median income in 1000 dollars', palette = 'PuBu', 
+                    na.value = 'wheat')
+```
+
+The median income is higher on the tracts along the coast and in highly populated
+areas. The San Franciso Bay area, Monterrey, Santa Barbara and the greater LA and
+see the highest median incomes. As showed before, median income is higher in 
+urbanized areas.
+
+#### Vs voting participation
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot voting participaton vs median income
+scatter(data_perc, 'median_income', 'voting_part', 1/20, 
+        xscale = FALSE, yscale = FALSE, coord = FALSE)
+```
+
+The voting participation (total votes divided by the population) per tract is 
+reasonable strong positively correlated (0.59) with the median income. If the 
+median income is higher in a tract, also a bigger part of the population voted.
+
+#### Vs winner
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot for median income per winner
+boxplot(data_vot, 'winner', 'median_income', 1/10, 
+        yscale = TRUE, 250000, 20000, coord = FALSE)
+```
+
+The median income for tracts were the Republican party was the largest is higher 
+than in tracts where the Democratic party was the largest, but not by much. The 
+tracts where the Democratic party was larger there are more outliers.
+
+#### Vs owner
+Households who owns their house correlates reasonable strong positvely (0.61) 
+with the median income.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# median income vs ownership
+scatter(data, 'median_income', 'owner', 1/25, 
+        xscale = FALSE, yscale = FALSE, coord = FALSE)
+```
+
+If a higher percentage of a tract owns their homes, the median income is also 
+higher. As you have to have more income in general to be able to by a house, 
+this is not a surprise that these variables move together.
+
+#### Vs unemployment
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# unemployment rate vs median income
+scatter(data, 'median_income', 'unemployment_rate', 1/20, xscale = FALSE, 
+        yscale = FALSE, coord = TRUE, col = data$unemployment_rate, ci = 0.99)
+```
+
+Unemployment rate in a tract and the median income are negatively correlated 
+(-0.53). Expected, as higher unemployment rates correlate with lower median
+incomes. 
+
+#### Vs poverty
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# unemployment rate vs median income
+scatter(data, 'median_income', 'poverty_rate', 1/25, xscale = FALSE, 
+        yscale = FALSE, coord = TRUE, col = data$poverty_rate, ci = 0.99)
+```
+
+As one can expect there is also a strong negative correlation (-0.73) between the 
+poverty rate and the median income in a tract. The poverty and unemployment rate
+are also positively correlated (0.57), which is also not surprising as these 
+variables move hand in hand.
+
+### Winner
+The Democratic party was the largest in 80% of the tracts, if we however plot 
+this on the map, California looks mostly red (Republicans).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# plot the party that got the most votes
+political <- map(ggcounties, data_geo, TRUE, 'winner') +
+  scale_fill_manual('Party', values = c('dodgerblue3', 'firebrick1'), 
+                    na.value ='wheat')
+
+political
+```
+
+#### Vs square miles
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot square miles vs winner
+boxplot(data_vot, 'winner', 'square_miles', 1/10, yscale = TRUE, yend = 60, 
+        ystep = 5, coord = TRUE, col = data$square_miles, ci = 0.95)
+```
+
+Most of the tracts where the Democrats won are much smaller than the tracts were 
+the Republicans won. The distribution for the Democrats is very longtailed though, 
+75% of the tracts are smaller than 1.12 square mile. Only 95% of the values are 
+shown in order to show the boxplot for the Democrats. As we have seen before the
+population per square miles shows the opposite, Democrats won in more densely 
+populated areas.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(subset(subset(data_vot, winner == 'Democrats'))$square_miles)
+```
+
+#### Vs poverty & unemployment rates
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pov <- boxplot(data_vot, 'winner', 'poverty_rate', 1/10, yscale = TRUE, 
+               yend = 100, ystep = 5, coord = TRUE, col = data$poverty_rate, 
+               ci = 0.99) 
+
+unempl <- boxplot(data_vot, 'winner', 'unemployment_rate', 1/10, yscale = TRUE, 
+                  yend = 100, ystep = 5, coord = TRUE, 
+                  col = data$unemployment_rate, ci = 0.999)
+
+grid.arrange(pov, unempl)
+```
+
+The median poverty rate is higher for Democratic (14.4%) tracts than for Republican 
+tracts (10%). The median unemployment rate is however pretty similar for both at
+9.2-3%. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate medians for the two groups
+med_winner <- data_vot %>% 
+  group_by(winner) %>% 
+  dplyr :: summarise(median_poverty = median(poverty_rate),
+                     median_unemployment = median(unemployment_rate))
+
+knitr::kable(med_winner)
+```
+
+#### Vs voting participation
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot winner vs voting participation
+boxplot(data_perc, 'winner', 'voting_part', 1/10, yscale = TRUE, 100, 10, 
+        coord = FALSE) 
+```
+
+Voting participation in Democratic tracts (~35%) is lower than in Republican 
+tracts (~46%). There are more outliers for tracts where the Republicans won, 
+both on the top and the bottom. 
+
+#### Vs household size
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot winner vs household size
+boxplot(data_vot, 'winner', 'total_hhsize', 1/10, yscale = TRUE, 7, 1, 
+        coord = FALSE) 
+```
+
+The household size in Democrat tracts seems to be slightly higher. The plot also
+shows that the tracts with larger households (above 5) are where the Democrats
+won. 
+
+#### Vs owner
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# boxplot winner vs owner
+boxplot(data_vot, 'winner', 'owner', 1/10, yscale = TRUE, 100, 10, 
+        coord = FALSE) 
+```
+
+Ownership is higher (70% +) in tracts where Republicans won. Ownership in 
+Democratic tracts is much lower (+ 50%). The Democratic distribution seems 
+however almostperfectly symmetrical. There are quite some outliers for the 
+Republican tracts.
+
+### Voting participation
+Voting participation correlates with many variables in this dataset. Note that we 
+only plot tracts where voting participation was below 100%. For 11 tracts the 
+voting participation is higher which seems to be due to incorrect data. Therefore 
+I am bit reluctant about the results for this variable as the higher correlations
+found might be due to data errors. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create intervals for cut_format function
+breaks_vp <- c(0, 10, 20, 30, 40, 50, 60, 70, 80, 90)
+
+# show voting participation on map of California
+map(ggcounties, subset(data_geo, voting_part <= 100 | is.na(voting_part)), TRUE, 
+    'cut_format(voting_part, breaks_vp)') +
+  scale_fill_brewer('voting participation', palette = 'BuGn', 
+                    na.value = 'wheat')
+```
+
+Voting participation is particularly low in the Central valley. Wondering what
+can cause this. Little interest for politics is one, but it might also be caused
+by big families or people that are not allowed to vote which both increase the
+population but not the number of votes. 
+
+#### Vs household size
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# household size vs voting participation
+scatter(data_perc, 'total_hhsize', 'voting_part', 1/20, xscale = FALSE, 
+        yscale = TRUE, yend = 100, ystep = 10, coord = FALSE)
+```
+
+Voting partipation is significantly negatively correlated with household size 
+(-0.6). How more people live in an average household, a smaller percentage in 
+the tract voted. Probably due that bigger households, generate more population 
+but not in the same way the total number of votes as children are not allowed to
+vote. There is not much difference in the correlation with household size for 
+renters or owners (-0.51 and -0.5 respecitvely). 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# calculate correlations
+hh_cor <- psych :: lowerCor(data_vot[,c('voting_part', 'renter_hhsize', 
+                                        'owner_hhsize')], digits = 2)
+```
+
+#### Vs owner
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# owner vs voting participation
+scatter(data_perc, 'owner', 'voting_part', 1/10, xscale = TRUE, xend = 100, 
+        xstep = 10, yscale = TRUE, yend = 100, ystep = 10, coord = FALSE)
+```
+
+It seems that if tract has a larger percentage of the households who own their 
+house also a bigger percentage has voted (0.48). The distribution is however 
+very wide even though a upward movement is visible.
+
+#### Vs poverty rate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# owner vs voting participation
+scatter(data_perc, 'voting_part', 'poverty_rate', 1/20, xscale = TRUE, 
+        xend = 100, xstep = 10, yscale = TRUE, yend = 100, ystep = 10, 
+        coord = TRUE, data$poverty_rate, ci = 0.999)
+```
+
+There is a relatively strong negative correlation (-0.62) between voter 
+participation and the poverty rate in a tract. When the poverty rate is lower, 
+more people casted their vote. The distribution looks a bit concave. 
+
+#### Vs unemployment rate
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# unemployment rate vs voting participation
+scatter(data_perc, 'voting_part', 'unemployment_rate', 1/10, xscale = TRUE, 
+        xend = 100, xstep = 10, yscale = TRUE, yend = 100, ystep = 10, 
+        coord = TRUE, data$unemployment_rate, ci = 0.999)
+```
+
+There is a negative correlation between the unemployment rate and the voting 
+participation rate (-0.42). When unemployment is higher in a tract a smaller 
+percentage voted. There are some tracts that have very high unemployment rates 
+which I do not show in the plot.
+
+### Winner vs type
+I thought it would be interesting to split tracts on both the winner as well as 
+the type variable. Used this [tutorial](http://www.cyclismo.org/tutorial/R/tables.html).
+It is very clear that tracts are more likely to have voted Democratic if they are 
+marked as urbanized areas, same is true for rural areas and Republican. For 
+urban centers there is a 50:50 divide between the two winners. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create contingency table for winner and type variables
+tbl <-table(data$type, data$winner)
+
+# calculate the percentage of a type voted Dems or Reps
+table2 <- prop.table(tbl, 1)
+
+# create mosaicplot showing breakdown per type of winner
+mosaicplot(table2, main = 'Breakdown of tracts', 
+           color = c('dodgerblue3', 'firebrick1'), # colors
+           las = 1, cex.axis = 1) # text direction and size
+```
+
+### Summary
+#### Main variables
+The population per square mile variable does not correlate strongly with any of 
+the other variables in the dataset. Moderate correlations with the owner (-0.55) 
+and party variables (0.52/-0.51).
+
+The median income correlates moderately with the unemployment rate (-0.53), 
+owner (0.61) and voting participation (0.59). It correlates more strongly with
+the poverty rate (-0.73), which is expected. 
+
+The winner variable shows that Democratic tracts are smaller, are more densely 
+populated, have lower median incomes, lower ownership rates, higher poverty rates, 
+similar unemployment rates and lower voting participation, but slightly larger 
+households than Republican tracts. As there are more Democratic tracts the range 
+of values are more diverse and there are multiple outliers. 
+
+The newly introduced type variable shows that urbanized ares have the highest 
+median incomes, the lowest ownership, voting participation, poverty and 
+unemployment rates, the largest households and the lowest % of votes for the 
+Republican party. All variables become larger or smaller when moving to the 
+urban center and rural tracts. Except for the poverty rate which is the highest 
+in urban centers.
+
+Urbanized tracts are most likely tracts where the Democratic party got the most 
+votes. In rural tracts the Republican party was more likely to have won. For urban 
+centers it was half half. 
+
+#### Other variables
+The voting participation is the variable that correlates with many other 
+variables although moderate. Positively with ownership (0.48) and the median
+income (0.59), negatively with poverty rate (-0.62) and household size (-0.6). 
+The total votes and population per tract, that are used to calculate this 
+variable are coming from different datasets, so there might be errors as was 
+already indicated by the fact that some tracts had a voting participation higher 
+than 100. When these tracts are removed, the correlation with the other variables 
+however even increases with 2 a 3 procent point. 
+
+#### Strongest correlation
+The strongest correlation are between the dem and rep variables (0.99), but as 
+these are percentage that add up and both make up most of the votes this is not
+surprising. The second and third largest correlation are between the total 
+household size and renter and owner household size variables (resp. 0.84 and 
+0.88) also no surprise here, as the total household size is the based of the other 
+two. The fourth largest correlation is between the median income and the poverty 
+rate variables (-0.73). These variables are also expected to relate to each other. 
+No real surprises here
+
+# Multivariate Plots Section
+The median poverty rate in urban centers was higher (17.4%) than in the areas.
+This was unique as for all other variables, the median would rise or fall when
+moving from most densely to least populated tracts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results = 'asis'}
+# calculate medians for the three types
+medians_type <- data %>% group_by(type) %>% 
+  dplyr :: summarise(median_poverty = median(poverty_rate),
+                     median_income = median(median_income))
+
+knitr::kable(medians_type)
+```
+
+I wanted to see if the poverty rates in the urban clustered were correlated with
+median income and if there was any difference between Republican and Democratic
+tracts. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# create subset for urban clusters
+clusters <- subset(data, type == 'urban clusters' & !is.na(winner))
+
+# count nr of tracts per winner
+clusters_winner <- clusters %>% group_by(winner) %>% 
+  dplyr :: summarise( number_of_tracts = n())
+
+knitr :: kable(clusters_winner)
+```
+
+There are 506 tracts that are marked as urbanized clusters (excluding tracts that 
+did not have voter results). For little over half (54%) of these tract the 
+Republican party was the largest.
+
+### On the map
+I mapped the poverty rates and the winner on the tracts that are marked as urban
+clusters.  
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# find center coordinates of tracts
+xy <- as.data.frame(coordinates(tracts_all))
+tracts_df <- as.data.frame(tracts_all)
+
+# create new table with tract Id and the coordinates
+coordinates <- cbind(xy, tracts_df[,c('GEOID')])
+names(coordinates) <- c('long', 'lat', 'Id')
+coordinates$Id <- as.character(coordinates$Id)
+
+# add coordinates to data
+data <- left_join(data, coordinates, by = c('Id' = "Id"))
+```
+
+```{r, fig.width=8, fig.height=6, echo=FALSE, message=FALSE, warning=FALSE}
+# recrate clusters with lat and long coordinates
+clusters <- subset(data, type == 'urban clusters' & !is.na(winner))
+
+# basic map of California with county borders
+map_combi <- map(ggcounties, subset(data_geo, type == 'urban clusters' & 
+                                      !is.na(winner)), TRUE, 'winner') +
+  # fill color for the tracts based on winner
+  scale_fill_manual('Party', values = c('dodgerblue3', 'firebrick1'), 
+                    na.value ='wheat') +
+  # add center point per tract
+  geom_point(data = clusters, 
+             mapping = aes(x = long, y = lat, group = NULL, 
+                           color = poverty_rate), size = 0.2) +
+  # color for points based on the poverty rate
+  scale_color_gradient('Poverty rate in %', low = 'yellow', high ='black') +
+  # add title
+  ggtitle('Biggest party and poverty rate for urban center tracts')
+
+map_combi
+```
+
+As some tracts are small it is hard to see if most votes went to the Democratic
+or Republican party and the color of the dot indicating the poverty rate. 
+However there are a couple of things that catch the eye. 
+
+It seems that the tracts are grouped with other tracts where the same party won. 
+Coastal tracts and tracts in the valley voted mostly Democratic. In the bigger 
+tracts the Republican mostly won. It is not super clear but the tracts where the 
+poverty rate was the highest (40 and above) seem to be ones where the Democratic 
+party got the most votes. Low poverty rates are mostly found in Republican 
+tracts.
+
+### In a scatterplot
+As the results were not super clear due to the size of some tracts I opt for an
+other approach. I decided to look at the correlation between the poverty rate and
+median income in the different type of tracts in scatterplots.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# function for calculating correlation between median income and poverty rate
+# for certain subset based on splitting variable (var)
+correlation <- function(data, var) {
+  c <- ddply(data, var, summarise, 
+              cor = round(cor(median_income, poverty_rate),3))
+  c
+}
+
+# create multiple scatterplots split on facet
+scatter_multi <- function(data, var, facet, x, y, position){
+  
+  # calling correlation function
+  cor <- correlation(data, var) 
+  
+  p <- ggplot(data = data, aes(x = poverty_rate, y = median_income)) +
+    geom_jitter(aes(color = winner), size = 0.3, alpha = 1/2) +
+    # color & label for points
+    scale_color_manual('Party', values = c('dodgerblue3', 'firebrick1')) +
+    scale_x_continuous(breaks = seq(0, 100, 20)) +
+    scale_y_continuous(label = comma, trans ='log10') +
+    # create plot for every facet
+    facet_grid(facet) +
+    # add the correlation coefficient as a label
+    geom_text(data = cor, size = 3, 
+              aes(label = paste('r =', cor, sep = ' ')), x = x, y = y) +
+    # add axes labels
+    xlab('Poverty rate in %') +
+    ylab('Median income in USD (on log scale)') +
+    #location of legend
+    theme(legend.position = position)
+  
+  p
+}
+```
+
+```{r, fig.width = 8, fig.height = 6, echo=FALSE, message=FALSE, warning=FALSE}
+# income vs poverty rate split on type
+scatter_multi(data_vot,'type', ~type, 75, 5.4, 'top')
+```
+
+The correlation for the whole dataset was -0.73. If we look at the subsets based 
+on type (level of urbanization) the correlation is the highest for the urban 
+centers (0.75). We also see that almost all tracts with a poverty rate above 40% 
+in the urban clusters voted Democratic. 
+
+```{r, fig.width = 8, fig.height = 6, echo=FALSE, message=FALSE, warning=FALSE}
+# income vs poverty rate split on winner and type
+inc_pov <- scatter_multi(data_vot, c('type','winner'), 
+                          winner~type, 75, 5.4, 'none')
+
+inc_pov
+```
+
+If we split the data up in 6 groups based on type and winner, we see that the 
+correlation is highest (-0.797) for urban clusters where the Democratic party 
+got the most votes. 
+
+It is also visible that there are more tracts with an income above 100,000 dollars
+in urbanized areas and that in urbanized areas and urban clusters lower median 
+incomes are more likely in Democratic tracts. The highest poverty rates are more 
+likely to be in Democratic tracts. Except for rural areas where the distribution 
+looks pretty similar which is also reflected in the correlation coefficient. 
+
+```{r, fig.width = 8, fig.height = 6, echo=FALSE, message=FALSE, warning=FALSE}
+# calculate medians
+medians <- ddply(clusters, 'winner', summarise, 
+                 pov_rate = median(poverty_rate),
+                 median_y = median(median_income))
+
+# urban cluster split on winner
+scatter_multi(clusters, 'winner', ~winner, 50, 5.05, 'none') +
+  # x intercept showing the median poverty_rate
+  geom_vline(data = medians, aes(xintercept = pov_rate), 
+             linetype = 6, color = 'grey0') +
+  geom_text(data = medians, size = 3, x = 32, y = 4.31, color = 'grey0',
+            aes(label = paste('median =', pov_rate, sep = ' '))) +
+  # y intercept showing the median median_income
+  geom_hline(data = medians, aes(yintercept = median_y), linetype = 5, color = 'lightslategrey') +
+  geom_text(data = medians, size = 3, x = 47, y = 4.74, color = 'lightslategrey',
+              aes(label = paste('median =', median_y, sep = ' ')))
+```
+
+If we split the urban cluster distribution per winning party. It shows
+even more clear that for Democratic tracts the poverty rate and median income 
+are more highly correlated (-0.80). The Democratic distribution is leaner and 
+less whimsical as the Republican. 
+
+We also see that the median poverty for Democratic tracts is higher 21.1% (vs
+15.9%). The median median income in Republican tracts is higher (49,562.5 vs 
+44,212 dollars). So a median Democratic tract has a higher poverty rate and lower
+median income.
+
+#### Mann-Whitney U test
+If we look at the distribution of the poverty rate in these histograms, we see
+that the distributions are not normal, especially the Democratic one has multiple
+peaks. 
+
+```{r, fig.width = 8, fig.height = 4, echo=FALSE, message=FALSE, warning=FALSE}
+# histograms for urban centers per winner
+ggplot(data = clusters, aes(x = poverty_rate, color = as.factor(winner))) +
+  geom_histogram(binwidth = 1, fill = 'white') +
+  # add median
+  geom_vline(data = medians, aes(xintercept = pov_rate, color = winner), 
+             linetype = 1) +
+  # colors for bars
+  scale_color_manual(values = c('dodgerblue3', 'firebrick1')) +
+  facet_wrap(~winner) +
+  theme(legend.position = 'none')
+```
+
+As the distributions are not normally distributed we can use the [Mann–Whitney 
+U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test) to test if 
+the distributions are indeed non-similar. This is a nonparametric test which 
+tests that it is equally likely that the poverty rate for a randomly selected 
+Democratic tract will be greater than the poverty rate for a randomly selected 
+Republican tract. 
+
+H0: D1 and D2 are identical
+Ha: D1 is shifted to the right of D2
+
+D1 is the probability distribution for Democratic tracts, D2 is the probability 
+distribution for Republican tracts.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, results = 'markup'}
+# calculate Mann Whitney U
+wilcox.test(data = clusters, poverty_rate~winner, paired = FALSE)
+```
+
+The distributions in the two groups differs significantly. We can therefore 
+conclude that poverty rates in Democratic tracts exceed the poverty rates for
+Republican tracts for this dataset (Mann–Whitney U = 39,728, n_Democrats = 232, 
+n_Republicans = 274, P < 0.01 one-tailed).
+
+## Summary
+The median poverty rate was highest in urban centers (17.4%), when looking
+at the correlation between the median income and poverty rate it became clear
+that also the correlation was the highest in these tracts (0.75). When we split
+up the urban center tracts to who got the most votes, Democratic tracts showed
+an even higher correlation (0.80 vs 71%) and a much higher median poverty rate 
+of 21.1% (vs 15.9%) and lower median income (44,212 vs 49,563) than Republican 
+tracts. So it seems that the higher median poverty rate for urban clusters was 
+mostly caused by Democratic tracts with high median poverty rates.
+
+# Final Plots and Summary
+### Plot One
+```{r echo=FALSE, Plot_One}
+political +
+  ggtitle('Biggest party per census tract (presidential election 2016)')
+```
+
+California is always described as a Democratic state. If you however look at this
+map it shows a different picture. Ofcourse it is misleading as we have seen that
+tracts that where Republicans are bigger and less dense populated. As result the
+Democratic party is the biggest in California, but it makes clear there is not 
+one California and there are many areas in California where the Republican party 
+is very present.
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+inc_pov
+```
+
+This overview of scatterplots shows the relations between the median income and 
+the poverty rate. What catches the eye is the strong relation between the 
+variables for Democratic urban clusters. 
+
+The poverty rates are lower in the Republican tracts as we can seen as the tracts 
+are more clustered at the lower rates. The same is true for the median income 
+Republican tracts are more clustered in the higher income ranks. The maximum 
+poverty rates are found in the Democratic tracts (except for the rural tracts). 
+This overview also shows very clear how many tracts are marked as urbanized areas
+and how many of these tracts voted Democratic. 
+  
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+map_combi
+```
+
+Unfortunately this map did not come out as nice as it could be as there are so
+many tracts and especially the small ones make it hard to add an additional 
+variable.
+
+That said, it is still interesting to see that there are clusters of tracts that
+voted either Republican or Democratic. The Democratic cluster in the middle of 
+the state is interesting. I am wondering as this is an agricultural area and 
+if it therefore also sees high poverty rates. Almost all black dots (poverty rate 
+of 50% and above) are found in Democratic tracts. 
+
+# Reflection
+### Challenges
+The first challenge was to find all the different data and combine them to one
+dataset. It was surprisingly that broadband and census data was available per 
+census tract. I thought it would be easy to combine this with the voting data. 
+Unfortunately that proved to be a bit more difficult as voting results were 
+available per precinct instead of census tracts. It took a bit to figure out how
+to combine the different voting datasets to get the the voting results per 
+census tract.
+
+After all this time-consuming work it seems that something went wrong as voting
+participation was too high in some tract. Probably votes have been assigned 
+incorrectly when mapping from precincts to blocks. I have gone over this a couple 
+of times and I cannot find where it goes wrong in my mapping, so I am not sure 
+if there is something in the original mapping files (there was also an issue with
+votes in the middle of water tracts) or my method. It can also be caused by the 
+fact that the population data was coming from a different dataset.
+
+I was also struggling finding relations, I kind of hoped for relations between 
+population density and broadband speed for one. But there was nothing there. It 
+was only for the categorical variables (winner and type), which made for some 
+interesting findings. However both were created so might not be too reliable. 
+
+### Successes
+I am new to R, so plotting the results on maps, was a bit of challenge but with 
+insights from different tutorial (marked in main text), I figured out how to
+customize this for my use. To be honest I still do not totally understand what is
+happening exactly, but it works!
+
+###Future research
+It would be interesting to explore further if something is wrong with the voting 
+data and for example look further into why the voting participation is so much 
+higher in rural areas? Maybe compare total votes versus population over 18 to 
+get a cleaner rate. 
+
+#Sources
+Next to the links in the text, I have also made use of:
+
+* 'Statistics for Business and Economics' by McClave, Benson and Sincich
+* Stackoverflow and Udacity forums
+* [R-bloggers](https://www.r-bloggers.com/)
+* [ggplot](http://ggplot2.tidyverse.org/)
+* [STHDA](http://www.sthda.com/)
+* [Rstudio-cheatsheets](https://www.rstudio.com/resources/cheatsheets/)
+* [Color palette cheatsheet](https://www.nceas.ucsb.edu/~frazier/RSpatialGuides/colorPaletteCheatsheet.pdf)
