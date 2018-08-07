@@ -4,7 +4,7 @@ Projects for my Udacity Data Analyst Nanodegree
 ## P0: Analyze Bay Area bike share data
 In this project I investigated a raw dataset and shared my findings using a Jupyter Notebook. Real-life data provided by Bay Area Bike Share was used to determine differences in usage between commuters and tourists' ridership patterns, average duration of trips, and more.
 
-[Link to report](https://github.com/mariannerose/udacity_dand/blob/master/p0/Bay_Area_Bike_Share_Analysis.ipynb)
+[Link to report](http://htmlpreview.github.io/?https://github.com/mariannerose/udacity_dand/blob/master/p0/Bay_Area_Bike_Share_Analysis.html)
 
 ## P1: Test a perceptual phenomenon
 In this project I used descriptive statistics and a statistical test to analyze the Stroop effect, a classic result of experimental psychology. Giving my readers a good intuition for the data and use statistical inference to draw a conclusion based on the results.
@@ -14,7 +14,7 @@ In this project I used descriptive statistics and a statistical test to analyze 
 ## P2: Investigate a dataset
 In this project I conducted my own data analysis on the team budgets in the Major League Baseball (MLB) using the [Lahman Baseball database](http://www.seanlahman.com/baseball-archive/statistics/) (2016 version). I used pandas and NumPy to answer the questions I was most interested in, and created a report sharing the answers. 
 
-[Link to report](https://github.com/mariannerose/udacity_dand/blob/master/p2/Project%202%20-%20Baseball%20-%20Team%20budgets%20revised.ipynb)
+[Link to report](http://htmlpreview.github.io/?https://github.com/mariannerose/udacity_dand/blob/master/p2/Project_2_-_Baseball_-_Teambudgets__revision_.html)
 
 ## P3: Wrangle OpenStreetMap data
 For this project I used data munging techniques, such as assessing the quality of the data for validity, accuracy, completeness, consistency and uniformity, to clean OpenStreetMap data for Leiden, a city in the Netherlands. 
