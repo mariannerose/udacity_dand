@@ -24,7 +24,7 @@ For this project I used data munging techniques, such as assessing the quality o
 ## P4: Explore and summarize data
 In this project I used R and applied exploratory data analysis techniques to explore data on economic and social characteristics of the counties of California population, broadband availability and election results of the 2016 presidential election. I used visualizations (including county maps) to show the differences between counties.
 
-[Link to report](https://github.com/mariannerose/udacity_dand/blob/master/p4/project_final%20(revised).html)
+[Link to report](http://htmlpreview.github.com/?https://github.com/mariannerose/udacity_dand/blob/master/p4/project_final%20(revised).html)
 
 ## P5: Identify fraud from Enron Email
 In this project I used machine learning techniques to build an algorithm to identify Enron Employees who may have committed fraud based on the public Enron financial and email dataset.
