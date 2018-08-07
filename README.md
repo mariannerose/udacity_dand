@@ -34,6 +34,6 @@ In this project I used machine learning techniques to build an algorithm to iden
 ## P6: Make Effective Data Visualization
 In this project I used Tableau to create a data visualization in Tableau that tells the story about the high rents, long commuting times and gentrifaction in the San Francisco Bay area.
 
-[Link to report](https://github.com/mariannerose/udacity_dand/blob/master/p8/SFBA%20summary.pdf)
-[Link to Tableau](https://public.tableau.com/profile/rianne.heijboer#!/vizhome/SFBAv2/Story1)
+<p>[Link to report](https://github.com/mariannerose/udacity_dand/blob/master/p8/SFBA%20summary.pdf)</p>
+<p>[Link to Tableau](https://public.tableau.com/profile/rianne.heijboer#!/vizhome/SFBAv2/Story1)</p>
 
